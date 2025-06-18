@@ -23,7 +23,7 @@ const Informasi = db.define("informasi", {
     },
     image: {
         type: DataTypes.STRING,
-        allowNull: false
+        allowNull: true
     },
     is_aktif: {
         type: DataTypes.SMALLINT,

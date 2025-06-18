@@ -46,7 +46,13 @@ const User = db.define("users", {
 })
 
 User.belongsTo(GroupUser, {
-    foreignKey: 'id'
-})
+    foreignKey: 'id_groups_users',
+    as: 'group'
+});
+
+GroupUser.hasMany(User, {
+    foreignKey: 'id_groups_users',
+    as: 'users'
+});
 
 export default User;

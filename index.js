@@ -21,6 +21,9 @@ const app = express();
 app.set('trust proxy', 1);
 
 app.use(express.json());
+
+// Middleware untuk menyajikan file statis
+app.use(express.static('public'));
 app.use(cookieParser());
 
 // Konfigurasi helmet dengan kebijakan cross-origin yang benar
@@ -98,7 +101,7 @@ import sidebarAksesRoutes from './routes/sidebar_akses.route.js';
 // Use routes
 app.use('/api/users', usersRoutes);
 app.use('/api/group_users', groupUsersRoutes);
-app.use('/api/prodis', prodiRoutes);
+app.use('/api/prodi', prodiRoutes);
 app.use('/api/kelas', kelasRoutes);
 app.use('/api/mahasiswa', mahasiswaRoutes);
 app.use('/api/dosen', dosenRoutes);

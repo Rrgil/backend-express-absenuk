@@ -55,20 +55,25 @@ export const createProdi = async (req, res) => {
             });
         }
         
-        // Cek apakah slug sudah ada
-        const existingSlug = await Prodi.findOne({ where: { slug: slug } });
-        if (existingSlug) {
+        // Cek apakah slug prodi sudah ada
+        const existingProdiBySlug = await Prodi.findOne({
+            where: {
+                slug: slug
+            }
+        });
+
+        if (existingProdiBySlug) {
             return res.status(400).json({
                 statusCode: 400,
                 message: "Slug prodi sudah terdaftar"
             });
         }
         
-        // Buat data prodi baru
+        // Buat data prodi baru dengan status eksplisit
         const prodi = await Prodi.create({
-            slug,
-            nama,
-            status: 1 // Status aktif
+            slug: slug,
+            nama: nama,
+            status: 1 // Status default aktif
         });
         
         return res.status(201).json({

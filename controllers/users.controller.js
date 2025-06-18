@@ -6,15 +6,25 @@ import dotenv from "dotenv";
 import { Sequelize } from "sequelize";
 import fs from "fs";
 import path from "path";
-import { uploadUserSingle } from "../config/multer.config.js";
+import { fileURLToPath } from 'url';
 import multer from "multer";
 
 dotenv.config();
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 // Fungsi untuk mengambil semua data users
 export const getAllUsers = async (req, res) => {
     try {
-        const users = await Users.findAll();
+        const users = await Users.findAll({
+            attributes: ['id', 'id_groups_users', 'username', 'nama', 'email', 'image', 'status'],
+            include: [{
+                model: GroupUser,
+                as: 'group',
+                attributes: ['group_nama']
+            }]
+        });
         res.status(200).json(users);
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -31,6 +41,7 @@ export const getUserById = async (req, res) => {
             },
             include: [{
                 model: GroupUser,
+                as: 'group',
                 attributes: ['group_nama']
             }]
         });
@@ -157,111 +168,85 @@ export const createUser = async (req, res) => {
 // Update user
 export const updateUser = async (req, res) => {
     try {
-        // Handle file upload
-        upload2(req, res, async function (err) {
-            if (err instanceof multer.MulterError) {
-                return res.status(400).json({
-                    status: 'error',
-                    message: 'Error uploading file: ' + err.message
-                });
-            } else if (err) {
-                return res.status(400).json({
-                    status: 'error',
-                    message: err.message
-                });
-            }
+        const { id } = req.params;
+        const user = await Users.findByPk(id);
 
-            const { id } = req.params;
-            console.log('Raw body:', req.body);
-            console.log('Files:', req.file);
-
-            // Ambil data dari form-data
-            const nama = req.body.nama || '';
-            const group_id = req.body.group_id || '';
-            const username = req.body.username || '';
-            const email = req.body.email || '';
-            const no_telp = req.body.no_telp || '';
-            const alamat = req.body.alamat || null;
-            const password = req.body.password;
-
-            // Validasi data wajib
-            if (!nama || !group_id || !username || !email || !no_telp) {
-                return res.status(400).json({
-                    status: 'error',
-                    message: 'Nama, group, username, email, dan no telepon wajib diisi'
-                });
-            }
-
-            // Cek apakah user ada
-            const user = await User.findByPk(id);
-            if (!user) {
-                return res.status(404).json({
-                    status: 'error',
-                    message: 'User tidak ditemukan'
-                });
-            }
-
-            console.log('User yang akan diupdate:', user.toJSON());
-
-            // Update data user
-            const updateData = {
-                nama: nama,
-                group_id: parseInt(group_id),
-                username: username,
-                email: email,
-                no_telp: no_telp,
-                alamat: alamat,
-                updated_at: new Date()
-            };
-
-            // Update password jika ada
-            if (password) {
-                const hashedPassword = await bcrypt.hash(password, 10);
-                updateData.password = hashedPassword;
-            }
-
-            // Update foto jika ada
-            if (req.file) {
-                updateData.image = req.file.filename;
-            }
-
-            console.log('Data yang akan diupdate:', updateData);
-
-            // Update user
-            const [updatedRows] = await User.update(updateData, {
-                where: { id: parseInt(id) }
+        if (!user) {
+            return res.status(404).json({
+                statusCode: 404,
+                message: "User tidak ditemukan"
             });
+        }
 
-            if (updatedRows === 0) {
-                return res.status(400).json({
-                    status: 'error',
-                    message: 'Gagal mengupdate data user'
-                });
+        const { nama, id_groups_users, username, email, password } = req.body;
+
+        // Validasi input dasar
+        if (!nama || !id_groups_users || !username || !email) {
+            return res.status(400).json({
+                statusCode: 400,
+                message: "Mohon lengkapi semua field yang wajib diisi"
+            });
+        }
+
+        // Cek duplikasi username jika diubah
+        if (username !== user.username) {
+            const existingUsername = await Users.findOne({ where: { username } });
+            if (existingUsername) {
+                return res.status(400).json({ statusCode: 400, message: "Username sudah digunakan" });
             }
+        }
 
-            // Ambil data user yang sudah diupdate
-            const updatedUser = await User.findByPk(id);
+        // Cek duplikasi email jika diubah
+        if (email !== user.email) {
+            const existingEmail = await Users.findOne({ where: { email } });
+            if (existingEmail) {
+                return res.status(400).json({ statusCode: 400, message: "Email sudah digunakan" });
+            }
+        }
 
-            res.json({
-                status: 'success',
-                message: 'Berhasil mengupdate data user',
-                data: {
-                    id: updatedUser.id,
-                    nama: updatedUser.nama,
-                    username: updatedUser.username,
-                    email: updatedUser.email,
-                    no_telp: updatedUser.no_telp,
-                    alamat: updatedUser.alamat,
-                    foto: updatedUser.image,
-                    group_id: updatedUser.group_id
+        const updateData = {
+            nama,
+            id_groups_users,
+            username,
+            email,
+        };
+
+        // Hash password jika ada perubahan
+        if (password) {
+            updateData.password = await bcrypt.hash(password, 12);
+        }
+
+        // Handle image update
+        if (req.file) {
+            const newImagePath = `/uploads/users/${req.file.filename}`;
+            // Hapus gambar lama jika ada
+            if (user.image) {
+                const oldImagePath = path.join(__dirname, '..', user.image.substring(1));
+                if (fs.existsSync(oldImagePath)) {
+                    fs.unlinkSync(oldImagePath);
                 }
-            });
+            }
+            updateData.image = newImagePath;
+        }
+
+        await Users.update(updateData, { where: { id } });
+
+        const updatedUser = await Users.findByPk(id, {
+            attributes: ['id', 'nama', 'username', 'email', 'id_groups_users', 'image']
         });
+
+        res.status(200).json({
+            statusCode: 200,
+            message: "Berhasil memperbarui pengguna",
+            data: updatedUser
+        });
+
     } catch (error) {
-        console.error('Error updating user:', error);
+        console.error("Error updating user:", error);
         res.status(500).json({
-            status: 'error',
-            message: error.message || 'Gagal mengupdate data user'
+            statusCode: 500,
+            message: "Terjadi kesalahan pada server",
+            error: error.message
         });
     }
 };
@@ -388,10 +373,17 @@ export const getProfile = async (req, res) => {
 // Update user profile
 export const updateProfile = async (req, res) => {
     try {
-        // Ambil userId dari middleware yang sudah memverifikasi token
         const userId = req.user.id;
+        const { nama, email, username } = req.body;
 
-        // Cari user untuk mendapatkan gambar lama jika ada
+        // Validasi input wajib
+        if (!nama || !email || !username) {
+            return res.status(400).json({
+                statusCode: 400,
+                message: "Nama, email, dan username wajib diisi"
+            });
+        }
+
         const currentUser = await Users.findByPk(userId);
         if (!currentUser) {
             return res.status(404).json({
@@ -400,139 +392,93 @@ export const updateProfile = async (req, res) => {
             });
         }
 
-        // Gunakan middleware upload
-        // Catatan: field di form-data harus bernama 'image'
-        uploadUserSingle('image')(req, res, async function (err) {
-            if (err) {
-                return res.status(400).json({
-                    statusCode: 400,
-                    message: err instanceof multer.MulterError 
-                        ? `Error saat upload file: ${err.message}` 
-                        : err.message
-                });
+        // Cek username dan email unik jika berubah
+        if (username !== currentUser.username || email !== currentUser.email) {
+            const existingUser = await Users.findOne({
+                where: {
+                    [Sequelize.Op.or]: [
+                        { username: username },
+                        { email: email }
+                    ],
+                    id: { [Sequelize.Op.ne]: userId }
+                }
+            });
+
+            if (existingUser) {
+                if (existingUser.username === username) {
+                    return res.status(400).json({ statusCode: 400, message: "Username sudah digunakan" });
+                }
+                if (existingUser.email === email) {
+                    return res.status(400).json({ statusCode: 400, message: "Email sudah digunakan" });
+                }
             }
+        }
 
-            try {
-                const { nama, email, username } = req.body;
-                
-                // Validasi input wajib
-                if (!nama || !email || !username) {
-                    return res.status(400).json({
-                        statusCode: 400,
-                        message: "Nama, email, dan username wajib diisi"
-                    });
-                }
-                
-                // Cek username dan email unik
-                const existingUser = await Users.findOne({
-                    where: {
-                        [Sequelize.Op.or]: [
-                            { username },
-                            { email }
-                        ],
-                        id: { [Sequelize.Op.ne]: userId }
-                    }
-                });
-                
-                if (existingUser) {
-                    if (existingUser.username === username) {
-                        return res.status(400).json({
-                            statusCode: 400,
-                            message: "Username sudah digunakan"
-                        });
-                    }
-                    if (existingUser.email === email) {
-                        return res.status(400).json({
-                            statusCode: 400,
-                            message: "Email sudah digunakan"
-                        });
-                    }
-                }
+        const updateData = {
+            nama,
+            email,
+            username
+        };
 
-                const updateData = {
-                    nama,
-                    email,
-                    username
+        // Jika ada file foto baru yang diupload
+        if (req.file) {
+            updateData.image = `/uploads/users/${req.file.filename}`;
+            
+            // Hapus gambar lama jika ada
+            if (currentUser.image) {
+                try {
+                    const oldImagePath = path.join(process.cwd(), currentUser.image.replace(/^\//, ''));
+                    if (fs.existsSync(oldImagePath)) {
+                        fs.unlinkSync(oldImagePath);
+                    }
+                } catch (fsError) {
+                    console.error('Error saat menghapus gambar lama:', fsError);
+                }
+            }
+        }
+
+        // Update data user
+        await Users.update(updateData, {
+            where: { id: userId }
+        });
+
+        const updatedUser = await Users.findByPk(userId, {
+            attributes: ['id', 'username', 'email', 'nama', 'image', 'id_groups_users']
+        });
+        
+        let groupUserData = null;
+        if (updatedUser.id_groups_users) {
+            const groupUser = await GroupUser.findByPk(updatedUser.id_groups_users);
+            if (groupUser) {
+                groupUserData = {
+                    id: groupUser.id,
+                    nama: groupUser.group_nama
                 };
-
-                // Jika ada file foto yang diupload
-                if (req.file) {
-                    // Path relatif untuk disimpan di database
-                    // Simpan path sesuai dengan konfigurasi multer
-                    updateData.image = `/uploads/users/${req.file.filename}`;
-                    console.log('Berhasil mengupload gambar:', req.file.filename);
-                    
-                    // Hapus gambar lama jika ada
-                    if (currentUser.image) {
-                        try {
-                            // Ambil nama file dari path
-                            const oldImagePath = path.join(process.cwd(), currentUser.image.replace(/^\//, ''));
-                            
-                            // Periksa apakah file ada sebelum dihapus
-                            if (fs.existsSync(oldImagePath)) {
-                                fs.unlinkSync(oldImagePath);
-                                console.log(`Berhasil menghapus gambar lama: ${oldImagePath}`);
-                            }
-                        } catch (fsError) {
-                            console.error('Error saat menghapus gambar lama:', fsError);
-                            // Lanjutkan proses meskipun gagal menghapus gambar lama
-                        }
-                    }
-                }
-
-                // Update data user
-                const [updated] = await Users.update(updateData, {
-                    where: { id: userId }
-                });
-
-                if (updated === 0) {
-                    return res.status(404).json({
-                        statusCode: 404,
-                        message: "User tidak ditemukan"
-                    });
-                }
-
-                // Ambil data user yang sudah diupdate
-                const updatedUser = await Users.findByPk(userId, {
-                    attributes: ['id', 'username', 'email', 'nama', 'image', 'id_groups_users']
-                });
-                
-                // Ambil data group user
-                let groupUserData = null;
-                if (updatedUser.id_groups_users) {
-                    const groupUser = await GroupUser.findByPk(updatedUser.id_groups_users);
-                    if (groupUser) {
-                        groupUserData = {
-                            id: groupUser.id,
-                            nama: groupUser.group_nama
-                        };
-                    }
-                }
-
-                return res.status(200).json({
-                    statusCode: 200,
-                    message: "Profil berhasil diperbarui",
-                    data: {
-                        id: updatedUser.id,
-                        username: updatedUser.username,
-                        email: updatedUser.email,
-                        nama: updatedUser.nama,
-                        image: updatedUser.image,
-                        group_user: groupUserData
-                    }
-                });
-
-            } catch (error) {
-                console.error('Error in updateProfile:', error);
-                return res.status(500).json({
-                    statusCode: 500,
-                    message: "Terjadi kesalahan saat memperbarui profil",
-                    error: error.message
-                });
             }
+        }
+        
+        const responseData = {
+            id: updatedUser.id,
+            username: updatedUser.username,
+            email: updatedUser.email,
+            nama: updatedUser.nama,
+            image: updatedUser.image,
+            group_user: groupUserData
+        };
+
+        return res.status(200).json({
+            statusCode: 200,
+            message: "Profil berhasil diperbarui",
+            data: responseData
         });
 
     } catch (error) {
+        if (error instanceof multer.MulterError) {
+            return res.status(400).json({
+                statusCode: 400,
+                message: `Error saat upload file: ${error.message}`
+            });
+        }
         console.error('Error in updateProfile:', error);
         return res.status(500).json({
             statusCode: 500,
@@ -636,6 +582,7 @@ export const login = async (req, res) => {
             },
             include: [{
                 model: GroupUser,
+                as: 'group',
                 attributes: ['group_nama']
             }]
         });

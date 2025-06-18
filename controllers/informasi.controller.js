@@ -1,6 +1,8 @@
 import Informasi from "../models/informasi.model.js";
 import { Sequelize } from "sequelize";
-import { uploadInformasiSingle } from "../config/multer.config.js";
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 // Fungsi untuk mengambil semua data informasi
 export const getAllInformasi = async (req, res) => {
@@ -43,23 +45,18 @@ export const getInformasiById = async (req, res) => {
     }
 };
 
-// Middleware untuk upload gambar informasi
-export const uploadImage = uploadInformasiSingle('image');
-
 // Fungsi untuk menambahkan data informasi
 export const createInformasi = async (req, res) => {
     try {
-        // Validasi input wajib
-        const { nama, slug, isi } = req.body;
-        
+        const { nama, slug, isi, is_aktif, status } = req.body;
+
         if (!nama || !slug || !isi) {
             return res.status(400).json({
                 statusCode: 400,
                 message: "Nama, slug, dan isi wajib diisi"
             });
         }
-        
-        // Cek apakah slug sudah ada
+
         const existingSlug = await Informasi.findOne({ where: { slug: slug } });
         if (existingSlug) {
             return res.status(400).json({
@@ -67,25 +64,25 @@ export const createInformasi = async (req, res) => {
                 message: "Slug sudah digunakan"
             });
         }
-        
-        // Pastikan ada file gambar yang diupload
+
         if (!req.file) {
             return res.status(400).json({
                 statusCode: 400,
                 message: "Gambar wajib diupload"
             });
         }
-        
-        // Buat data informasi baru
+
+        const imageUrl = `/uploads/informasi/${req.file.filename}`;
+
         const informasi = await Informasi.create({
             nama,
             slug,
             isi,
-            image: req.file.filename,
-            is_aktif: 1, // Aktif secara default
-            status: 1 // Status aktif
+            image: imageUrl,
+            is_aktif: is_aktif !== undefined ? is_aktif : 1,
+            status: status !== undefined ? status : 1
         });
-        
+
         return res.status(201).json({
             statusCode: 201,
             message: "Data informasi berhasil ditambahkan",
@@ -109,12 +106,12 @@ export const updateInformasi = async (req, res) => {
                 message: 'Informasi tidak ditemukan'
             });
         }
-        
+
         const { nama, slug, isi, is_aktif, status } = req.body;
-        
-        // Cek apakah slug sudah digunakan oleh informasi lain
+        const oldImage = informasi.image;
+
         if (slug && slug !== informasi.slug) {
-            const existingSlug = await Informasi.findOne({ 
+            const existingSlug = await Informasi.findOne({
                 where: { slug: slug, id: { [Sequelize.Op.ne]: req.params.id } }
             });
             if (existingSlug) {
@@ -124,27 +121,52 @@ export const updateInformasi = async (req, res) => {
                 });
             }
         }
-        
-        // Update data informasi
-        if (nama) informasi.nama = nama;
-        if (slug) informasi.slug = slug;
-        if (isi) informasi.isi = isi;
-        if (is_aktif !== undefined) informasi.is_aktif = is_aktif;
-        if (status !== undefined) informasi.status = status;
-        
-        // Jika ada file gambar yang diupload
+
+        let imageUrl = informasi.image;
         if (req.file) {
-            informasi.image = req.file.filename;
+            imageUrl = `/uploads/informasi/${req.file.filename}`;
         }
-        
+
+        informasi.nama = nama || informasi.nama;
+        informasi.slug = slug || informasi.slug;
+        informasi.isi = isi || informasi.isi;
+        informasi.image = imageUrl;
+        if (is_aktif !== undefined) {
+            informasi.is_aktif = is_aktif;
+        }
+        if (status !== undefined) {
+            informasi.status = status;
+        }
+
         await informasi.save();
-        
+
+        if (req.file && oldImage && oldImage !== imageUrl) {
+            const __filename = fileURLToPath(import.meta.url);
+            const __dirname = path.dirname(__filename);
+            const oldImagePath = path.join(__dirname, '..', 'public', oldImage);
+            if (fs.existsSync(oldImagePath)) {
+                try {
+                    fs.unlinkSync(oldImagePath);
+                } catch (err) {
+                    console.error("Gagal menghapus gambar lama:", err);
+                }
+            }
+        }
+
         return res.status(200).json({
             statusCode: 200,
             message: "Data informasi berhasil diperbarui",
             data: informasi
         });
     } catch (error) {
+        if (req.file) {
+            const __filename = fileURLToPath(import.meta.url);
+            const __dirname = path.dirname(__filename);
+            const newImagePath = path.join(__dirname, '..', 'public', 'uploads', 'informasi', req.file.filename);
+            if (fs.existsSync(newImagePath)) {
+                fs.unlinkSync(newImagePath);
+            }
+        }
         return res.status(500).json({
             statusCode: 500,
             message: error.message

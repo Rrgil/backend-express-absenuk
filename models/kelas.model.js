@@ -1,7 +1,7 @@
 import { Sequelize } from "sequelize";
 import db from "../config/db.config.js";
 
-const DataTypes = Sequelize;
+const { DataTypes } = Sequelize;
 
 const Kelas = db.define("kelas", {
     id: {

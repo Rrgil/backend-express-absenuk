@@ -53,11 +53,11 @@ const fileFilter = (req, file, cb) => {
 
 // Definisi path untuk setiap jenis upload
 const uploadPaths = {
-    users: 'uploads/users',
-    mahasiswa: 'uploads/mahasiswa',
-    dosen: 'uploads/dosen',
-    informasi: 'uploads/informasi',
-    configurasi: 'uploads/configurasi'
+    users: 'public/uploads/users',
+    mahasiswa: 'public/uploads/mahasiswa',
+    dosen: 'public/uploads/dosen',
+    informasi: 'public/uploads/informasi',
+    configurasi: 'public/uploads/configurasi'
 };
 
 // Buat storage untuk setiap jenis upload
@@ -109,7 +109,7 @@ const configurasiUpload = multer({
 });
 
 // Konfigurasi default untuk upload umum
-const defaultStorage = createStorage('uploads/temp', 'temp-');
+const defaultStorage = createStorage('public/uploads/temp', 'temp-');
 const upload = multer({
     storage: defaultStorage,
     fileFilter: fileFilter,

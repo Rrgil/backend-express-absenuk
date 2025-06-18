@@ -81,17 +81,20 @@ const Mahasiswa = db.define("mahasiswa", {
 
 // Relasi Mahasiswa dengan JenisKelamin
 Mahasiswa.belongsTo(JenisKelamin, {
-    foreignKey: 'id_jenis_kelamin'
+    foreignKey: 'id_jenis_kelamin',
+    as: 'jenis_kelamin'
 })
 
 // Relasi Mahasiswa dengan Kelas
 Mahasiswa.belongsTo(Kelas, {
-    foreignKey: 'id_kelas'
+    foreignKey: 'id_kelas',
+    as: 'kelas'
 })
 
 // Relasi Mahasiswa dengan Prodi
 Mahasiswa.belongsTo(Prodi, {
-    foreignKey: 'id_prodi'
+    foreignKey: 'id_prodi',
+    as: 'prodi'
 })
 
 export default Mahasiswa;

@@ -1,4 +1,7 @@
 import Mahasiswa from "../models/mahasiswa.model.js";
+import JenisKelamin from "../models/jenis_kelamin.model.js";
+import Kelas from "../models/kelas.model.js";
+import Prodi from "../models/prodi.model.js";
 import bcrypt from "bcrypt";
 import auth from "../middleware/verifyToken.js";
 import dotenv from "dotenv";
@@ -8,7 +11,13 @@ dotenv.config();
 // Fungsi untuk mengambil semua data mahasiswa
 export const getAllMahasiswa = async (req, res) => {
     try {
-        const mahasiswa = await Mahasiswa.findAll();
+        const mahasiswa = await Mahasiswa.findAll({
+            include: [
+                { model: JenisKelamin, as: 'jenis_kelamin' },
+                { model: Kelas, as: 'kelas' },
+                { model: Prodi, as: 'prodi' }
+            ]
+        });
         res.status(200).json({
             statusCode: 200,
             message: "Berhasil mengambil data mahasiswa",

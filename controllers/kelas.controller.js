@@ -4,7 +4,7 @@ import { Sequelize } from "sequelize";
 // Fungsi untuk mengambil semua data kelas
 export const getAllKelas = async (req, res) => {
     try {
-        const kelas = await Kelas.findAll();
+        const kelas = await Kelas.findAll({ where: { status: 1 } });
         return res.status(200).json({
             statusCode: 200,
             message: "Data kelas berhasil diambil",
@@ -77,6 +77,19 @@ export const createKelas = async (req, res) => {
             data: kelas
         });
     } catch (error) {
+        // Log error yang lebih detail untuk debugging
+        console.error("Error saat membuat kelas:", error);
+
+        // Jika ini adalah error validasi dari Sequelize, kirim pesan yang lebih spesifik
+        if (error.name === 'SequelizeValidationError') {
+            const messages = error.errors.map(err => err.message);
+            return res.status(400).json({
+                statusCode: 400,
+                message: "Validation error",
+                errors: messages
+            });
+        }
+
         return res.status(500).json({
             statusCode: 500,
             message: error.message
