@@ -4,7 +4,7 @@ import { Sequelize } from "sequelize";
 // Fungsi untuk mengambil semua data dosen
 export const getAllDosen = async (req, res) => {
     try {
-        const dosen = await Dosen.findAll();
+        const dosen = await Dosen.findAll({ where: { status: 1 } });
         return res.status(200).json({
             statusCode: 200,
             message: "Data dosen berhasil diambil",
@@ -46,21 +46,21 @@ export const getDosenById = async (req, res) => {
 export const createDosen = async (req, res) => {
     try {
         // Validasi input wajib
-        const { nip, kode_dosen, nama } = req.body;
+        const { nidn, kode_dosen, nama } = req.body;
         
-        if (!nip || !kode_dosen || !nama) {
+        if (!nidn || !kode_dosen || !nama) {
             return res.status(400).json({
                 statusCode: 400,
-                message: "NIP, kode dosen, dan nama wajib diisi"
+                message: "NIDN, kode dosen, dan nama wajib diisi"
             });
         }
         
-        // Cek apakah NIP sudah ada
-        const existingNIP = await Dosen.findOne({ where: { nip: nip } });
-        if (existingNIP) {
+        // Cek apakah NIDN sudah ada
+        const existingNIDN = await Dosen.findOne({ where: { nidn: nidn } });
+        if (existingNIDN) {
             return res.status(400).json({
                 statusCode: 400,
-                message: "NIP sudah terdaftar"
+                message: "NIDN sudah terdaftar"
             });
         }
         
@@ -75,7 +75,7 @@ export const createDosen = async (req, res) => {
         
         // Buat data dosen baru
         const dosen = await Dosen.create({
-            nip,
+            nidn,
             kode_dosen,
             nama,
             status: 1 // Status aktif
@@ -105,17 +105,17 @@ export const updateDosen = async (req, res) => {
             });
         }
         
-        const { nip, kode_dosen, nama, status } = req.body;
+        const { nidn, kode_dosen, nama, status } = req.body;
         
-        // Cek apakah NIP sudah digunakan oleh dosen lain
-        if (nip && nip !== dosen.nip) {
-            const existingNIP = await Dosen.findOne({ 
-                where: { nip: nip, id: { [Sequelize.Op.ne]: req.params.id } }
+        // Cek apakah NIDN sudah digunakan oleh dosen lain
+        if (nidn && nidn !== dosen.nidn) {
+            const existingNIDN = await Dosen.findOne({ 
+                where: { nidn: nidn, id: { [Sequelize.Op.ne]: req.params.id } }
             });
-            if (existingNIP) {
+            if (existingNIDN) {
                 return res.status(400).json({
                     statusCode: 400,
-                    message: "NIP sudah digunakan oleh dosen lain"
+                    message: "NIDN sudah digunakan oleh dosen lain"
                 });
             }
         }
@@ -134,7 +134,7 @@ export const updateDosen = async (req, res) => {
         }
         
         // Update data dosen
-        if (nip) dosen.nip = nip;
+        if (nidn) dosen.nidn = nidn;
         if (kode_dosen) dosen.kode_dosen = kode_dosen;
         if (nama) dosen.nama = nama;
         if (status !== undefined) dosen.status = status;
@@ -165,11 +165,12 @@ export const deleteDosen = async (req, res) => {
             });
         }
         
-        await dosen.destroy();
+        dosen.status = 0;
+        await dosen.save();
         
         return res.status(200).json({
             statusCode: 200,
-            message: 'Data dosen berhasil dihapus'
+            message: 'Data dosen berhasil dinonaktifkan'
         });
     } catch (error) {
         return res.status(500).json({

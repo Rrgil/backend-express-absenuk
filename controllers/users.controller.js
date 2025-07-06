@@ -374,7 +374,7 @@ export const getProfile = async (req, res) => {
 export const updateProfile = async (req, res) => {
     try {
         const userId = req.user.id;
-        const { nama, email, username } = req.body;
+        const { nama, email, username, password } = req.body;
 
         // Validasi input wajib
         if (!nama || !email || !username) {
@@ -419,6 +419,12 @@ export const updateProfile = async (req, res) => {
             email,
             username
         };
+
+        // Jika ada password baru, hash dan tambahkan ke data update
+        if (password) {
+            const hashedPassword = await bcrypt.hash(password, 12);
+            updateData.password = hashedPassword;
+        }
 
         // Jika ada file foto baru yang diupload
         if (req.file) {

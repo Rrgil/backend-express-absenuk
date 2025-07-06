@@ -45,9 +45,7 @@ export const getProdiById = async (req, res) => {
 // Fungsi untuk menambahkan data prodi
 export const createProdi = async (req, res) => {
     try {
-        // Validasi input wajib
         const { slug, nama } = req.body;
-        
         if (!slug || !nama) {
             return res.status(400).json({
                 statusCode: 400,
@@ -55,21 +53,6 @@ export const createProdi = async (req, res) => {
             });
         }
         
-        // Cek apakah slug prodi sudah ada
-        const existingProdiBySlug = await Prodi.findOne({
-            where: {
-                slug: slug
-            }
-        });
-
-        if (existingProdiBySlug) {
-            return res.status(400).json({
-                statusCode: 400,
-                message: "Slug prodi sudah terdaftar"
-            });
-        }
-        
-        // Buat data prodi baru dengan status eksplisit
         const prodi = await Prodi.create({
             slug: slug,
             nama: nama,
@@ -82,6 +65,15 @@ export const createProdi = async (req, res) => {
             data: prodi
         });
     } catch (error) {
+        if (error instanceof Sequelize.UniqueConstraintError) {
+            const field = error.errors[0] ? error.errors[0].path : 'unknown';
+            const value = error.errors[0] ? error.errors[0].value : 'unknown';
+            const message = `Nilai '${value}' untuk kolom '${field}' sudah ada. Silakan gunakan nilai lain.`;
+            return res.status(400).json({
+                statusCode: 400,
+                message: message
+            });
+        }
         return res.status(500).json({
             statusCode: 500,
             message: error.message
@@ -110,18 +102,7 @@ export const updateProdi = async (req, res) => {
             });
         }
         
-        // Cek apakah slug sudah digunakan oleh prodi lain
-        if (slug !== prodi.slug) {
-            const existingSlug = await Prodi.findOne({ 
-                where: { slug: slug, id: { [Sequelize.Op.ne]: req.params.id } }
-            });
-            if (existingSlug) {
-                return res.status(400).json({
-                    statusCode: 400,
-                    message: "Slug sudah digunakan oleh prodi lain"
-                });
-            }
-        }
+
         
         // Update data prodi
         prodi.slug = slug;
@@ -135,6 +116,15 @@ export const updateProdi = async (req, res) => {
             data: prodi
         });
     } catch (error) {
+        if (error instanceof Sequelize.UniqueConstraintError) {
+            const field = error.errors[0] ? error.errors[0].path : 'unknown';
+            const value = error.errors[0] ? error.errors[0].value : 'unknown';
+            const message = `Nilai '${value}' untuk kolom '${field}' sudah digunakan. Silakan gunakan nilai lain.`;
+            return res.status(400).json({
+                statusCode: 400,
+                message: message
+            });
+        }
         return res.status(500).json({
             statusCode: 500,
             message: error.message
@@ -142,7 +132,7 @@ export const updateProdi = async (req, res) => {
     }
 };
 
-// Fungsi untuk menghapus data prodi berdasarkan ID
+// Fungsi untuk menghapus data prodi berdasarkan ID (Hard Delete)
 export const deleteProdi = async (req, res) => {
     try {
         const prodi = await Prodi.findByPk(req.params.id);
@@ -153,15 +143,22 @@ export const deleteProdi = async (req, res) => {
             });
         }
         
-        // Soft delete dengan mengubah status menjadi 0
-        prodi.status = 0;
-        await prodi.save();
+        // Hard delete: hapus data secara permanen dari database
+        await prodi.destroy();
         
         return res.status(200).json({
             statusCode: 200,
-            message: 'Data prodi berhasil dihapus'
+            message: 'Data prodi berhasil dihapus secara permanen'
         });
     } catch (error) {
+        // Cek apakah error disebabkan oleh foreign key constraint
+        if (error.name === 'SequelizeForeignKeyConstraintError') {
+            return res.status(400).json({
+                statusCode: 400,
+                message: 'Data prodi tidak dapat dihapus karena masih digunakan di data lain (misalnya: data mahasiswa atau jadwal).'
+            });
+        }
+        
         return res.status(500).json({
             statusCode: 500,
             message: error.message

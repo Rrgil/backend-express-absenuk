@@ -1,124 +1,94 @@
-import path from 'path';
-import fs from 'fs';
-import db from '../config/db.config.js';
-import { Sequelize } from 'sequelize';
+import { Parser } from 'json2csv';
+import Presensi from '../models/presensi.model.js';
+import Mahasiswa from '../models/mahasiswa.model.js';
+import Jadwal from '../models/jadwal.model.js';
+import Prodi from '../models/prodi.model.js';
+import MataKuliah from '../models/mata_kuliah.model.js';
+import Dosen from '../models/dosen.model.js';
+import Hari from '../models/hari.model.js';
+import Kelas from '../models/kelas.model.js';
+import Semester from '../models/semester.model.js';
 
-// Fungsi untuk membuat backup database
-export const createBackup = async (req, res) => {
-  try {
-    const { startDate, endDate, autoDelete } = req.body;
-    
-    // Buat nama file dengan timestamp
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const backupFileName = `backup_${timestamp}.sql`;
-    const backupPath = path.join(process.cwd(), 'temp', backupFileName);
-
-    // Buat direktori temp jika belum ada
-    const tempDir = path.join(process.cwd(), 'temp');
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true });
-    }
-
-    // Query untuk mendapatkan data
-    let whereClause = '';
-    if (startDate && endDate) {
-      whereClause = `WHERE created_at BETWEEN '${startDate}' AND '${endDate}'`;
-    }
-
-    // Dapatkan data dari tabel absensi
-    const results = await db.query(`SELECT * FROM absensi ${whereClause}`, {
-      type: Sequelize.QueryTypes.SELECT
-    });
-
-    let backupContent = '';
-    if (results.length > 0) {
-      // Generate SQL INSERT statements
-      backupContent += `-- Backup table absensi\n`;
-      backupContent += `INSERT INTO absensi (${Object.keys(results[0]).join(', ')}) VALUES\n`;
-      
-      results.forEach((row, index) => {
-        const values = Object.values(row).map(val => {
-          if (val === null) return 'NULL';
-          if (typeof val === 'string') return `'${val.replace(/'/g, "''")}'`;
-          if (val instanceof Date) return `'${val.toISOString()}'`;
-          return val;
+export const backupPresensi = async (req, res) => {
+    try {
+        const presensiData = await Presensi.findAll({
+            include: [
+                {
+                    model: Mahasiswa,
+                    as: 'mahasiswa',
+                    attributes: ['nim', 'nama'],
+                    include: [{
+                        model: Prodi,
+                        as: 'prodi',
+                        attributes: ['nama_prodi']
+                    }]
+                },
+                {
+                    model: Jadwal,
+                    as: 'jadwal',
+                    attributes: ['jam_mulai', 'jam_selesai'],
+                    include: [
+                        { model: MataKuliah, as: 'mata_kuliah', attributes: ['nama_mata_kuliah'] },
+                        { model: Dosen, as: 'dosen', attributes: ['nama'] },
+                        { model: Hari, as: 'hari', attributes: ['nama_hari'] },
+                        { model: Kelas, as: 'kelas', attributes: ['nama_kelas'] },
+                        { model: Semester, as: 'semester', attributes: ['nama_semester'] }
+                    ]
+                }
+            ],
+            order: [
+                ['id', 'ASC']
+            ],
+            raw: true,
+            nest: true
         });
+
+        if (presensiData.length === 0) {
+            return res.status(404).json({ msg: "Tidak ada data presensi untuk di-backup." });
+        }
+
+        const flattenedData = presensiData.map(p => ({
+            'ID Presensi': p.id,
+            'NIM': p.mahasiswa.nim,
+            'Nama Mahasiswa': p.mahasiswa.nama,
+            'Program Studi': p.mahasiswa.prodi.nama_prodi,
+            'Mata Kuliah': p.jadwal.mata_kuliah.nama_mata_kuliah,
+            'Dosen': p.jadwal.dosen.nama,
+            'Kelas': p.jadwal.kelas.nama_kelas,
+            'Semester': p.jadwal.semester.nama_semester,
+            'Hari': p.jadwal.hari.nama_hari,
+            'Jam Mulai': p.jadwal.jam_mulai,
+            'Jam Selesai': p.jadwal.jam_selesai,
+            'Tanggal Masuk': p.masuk_date,
+            'Latitude Masuk': p.masuk_lat,
+            'Longitude Masuk': p.masuk_lng,
+            'Gambar Masuk': p.masuk_image,
+            'Tanggal Keluar': p.keluar_date,
+            'Latitude Keluar': p.keluar_lat,
+            'Longitude Keluar': p.keluar_lng,
+            'Gambar Keluar': p.keluar_image,
+            'Status': p.status === 1 ? 'Hadir' : (p.status === 2 ? 'Izin' : (p.status === 3 ? 'Sakit' : 'Alpa')),
+        }));
+
+        const fields = [
+            'ID Presensi', 'NIM', 'Nama Mahasiswa', 'Program Studi', 'Mata Kuliah', 
+            'Dosen', 'Kelas', 'Semester', 'Hari', 'Jam Mulai', 'Jam Selesai',
+            'Tanggal Masuk', 'Latitude Masuk', 'Longitude Masuk', 'Gambar Masuk',
+            'Tanggal Keluar', 'Latitude Keluar', 'Longitude Keluar', 'Gambar Keluar', 'Status'
+        ];
         
-        backupContent += `(${values.join(', ')})${index === results.length - 1 ? ';' : ','}\n`;
-      });
+        const json2csvParser = new Parser({ fields });
+        const csv = json2csvParser.parse(flattenedData);
+
+        const date = new Date().toISOString().slice(0, 10);
+        const filename = `backup-presensi-${date}.csv`;
+
+        res.header('Content-Type', 'text/csv');
+        res.attachment(filename);
+        res.status(200).send(csv);
+
+    } catch (error) {
+        console.error("Error saat backup data presensi:", error);
+        res.status(500).json({ msg: "Gagal melakukan backup data", error: error.message });
     }
-
-    // Jika autoDelete true, hapus data sesuai range tanggal
-    if (autoDelete && startDate && endDate) {
-      await db.query(`
-        DELETE FROM absensi 
-        WHERE created_at BETWEEN :startDate AND :endDate
-      `, {
-        replacements: { startDate, endDate },
-        type: Sequelize.QueryTypes.DELETE
-      });
-    }
-
-    // Tulis ke file
-    fs.writeFileSync(backupPath, backupContent);
-
-    // Baca file backup
-    const fileContent = fs.readFileSync(backupPath);
-
-    // Hapus file temporary
-    fs.unlinkSync(backupPath);
-
-    // Set header untuk download
-    res.setHeader('Content-Type', 'application/sql');
-    res.setHeader('Content-Disposition', `attachment; filename=${backupFileName}`);
-    
-    // Kirim file
-    res.send(fileContent);
-
-  } catch (error) {
-    console.error('Error saat backup:', error);
-    res.status(500).json({
-      StatusCode: 500,
-      message: "Gagal membuat backup database",
-      error: error.message
-    });
-  }
-};
-
-// Fungsi untuk mendapatkan daftar file backup
-export const getBackupFiles = async (req, res) => {
-  try {
-    const backupDir = path.join(process.cwd(), 'backups');
-    
-    // Buat direktori jika belum ada
-    if (!fs.existsSync(backupDir)) {
-      fs.mkdirSync(backupDir, { recursive: true });
-    }
-
-    const files = fs.readdirSync(backupDir)
-      .filter(file => file.endsWith('.sql'))
-      .map(file => {
-        const filePath = path.join(backupDir, file);
-        const stats = fs.statSync(filePath);
-        return {
-          filename: file,
-          size: stats.size,
-          created: stats.mtime
-        };
-      })
-      .sort((a, b) => b.created - a.created); // Urutkan dari yang terbaru
-
-    res.status(200).json({
-      StatusCode: 200,
-      message: "Berhasil mendapatkan daftar file backup",
-      data: files
-    });
-  } catch (error) {
-    console.error('Error saat mengambil daftar backup:', error);
-    res.status(500).json({
-      StatusCode: 500,
-      message: "Gagal mendapatkan daftar file backup",
-      error: error.message
-    });
-  }
 };

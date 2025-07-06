@@ -1,10 +1,12 @@
 import Mahasiswa from "../models/mahasiswa.model.js";
 import JenisKelamin from "../models/jenis_kelamin.model.js";
-import Kelas from "../models/kelas.model.js";
 import Prodi from "../models/prodi.model.js";
+import Semester from "../models/semester.model.js";
 import bcrypt from "bcrypt";
 import auth from "../middleware/verifyToken.js";
 import dotenv from "dotenv";
+import path from 'path';
+import { getFaceEmbedding } from '../services/face.service.js';
 
 dotenv.config();
 
@@ -14,8 +16,8 @@ export const getAllMahasiswa = async (req, res) => {
         const mahasiswa = await Mahasiswa.findAll({
             include: [
                 { model: JenisKelamin, as: 'jenis_kelamin' },
-                { model: Kelas, as: 'kelas' },
-                { model: Prodi, as: 'prodi' }
+                { model: Prodi, as: 'prodi' },
+                { model: Semester, as: 'semester' }
             ]
         });
         res.status(200).json({
@@ -42,8 +44,8 @@ export const createMahasiswa = async (req, res) => {
             nim,
             nama,
             id_jenis_kelamin,
-            id_kelas,
             id_prodi,
+            id_semester,
             email,
             password,
             no_wa,
@@ -51,22 +53,27 @@ export const createMahasiswa = async (req, res) => {
             tanggal_lahir,
             alamat
         } = req.body;
+        
+        console.log('[DEBUG] Mencoba membuat mahasiswa dengan data:', req.body);
 
-        // Validasi input wajib
-        if (!nim || !nama || !id_jenis_kelamin || !id_kelas || !id_prodi || !password || !tempat_lahir || !tanggal_lahir || !alamat) {
+        // Validasi input wajib, termasuk file gambar dan alamat
+        if (!nim || !nama || !id_jenis_kelamin || !id_prodi || !password || !tempat_lahir || !tanggal_lahir || !alamat || !req.file) {
             return res.status(400).json({
                 statusCode: 400,
-                message: "Mohon lengkapi semua field yang wajib diisi",
+                message: "Mohon lengkapi semua field yang wajib diisi, termasuk foto dan alamat.",
                 data: null
             });
         }
 
         // Cek NIM unik
+        console.log(`[DEBUG] Mengecek NIM: ${nim}`);
         const existingNim = await Mahasiswa.findOne({
             where: {
                 nim
             }
         });
+        console.log('[DEBUG] Hasil pengecekan NIM (existingNim):', existingNim ? existingNim.toJSON() : null);
+
 
         if (existingNim) {
             return res.status(400).json({
@@ -78,11 +85,13 @@ export const createMahasiswa = async (req, res) => {
 
         // Cek email unik jika ada
         if (email) {
+            console.log(`[DEBUG] Mengecek Email: ${email}`);
             const existingEmail = await Mahasiswa.findOne({
                 where: {
                     email
                 }
             });
+            console.log('[DEBUG] Hasil pengecekan Email (existingEmail):', existingEmail ? existingEmail.toJSON() : null);
 
             if (existingEmail) {
                 return res.status(400).json({
@@ -94,19 +103,33 @@ export const createMahasiswa = async (req, res) => {
         }
 
         // Hash password
-        const hashedPassword = await bcrypt.hash(password, 12   );
+        const hashedPassword = await bcrypt.hash(password, 12);
 
-        // Ambil path gambar jika ada upload
-        const imagePath = req.file ? `/uploads/mahasiswa/${req.file.filename}` : null;
+        // Path gambar diambil dari req.file yang sudah divalidasi
+        const imagePath = `/uploads/mahasiswa/${req.file.filename}`;
+
+        // Hasilkan face embedding dari gambar yang diunggah
+        const absoluteImagePath = path.join(process.cwd(), 'uploads', 'mahasiswa', req.file.filename);
+        console.log(`[CREATE-DEBUG] Mencoba menghasilkan face descriptor untuk: ${absoluteImagePath}`);
+        const faceDescriptor = await getFaceEmbedding(absoluteImagePath);
+        let faceEmbedding = null;
+        if (faceDescriptor) {
+            console.log('[CREATE-DEBUG] Face descriptor berhasil dibuat.');
+            faceEmbedding = Array.from(faceDescriptor);
+        } else {
+            console.log('[CREATE-WARN] Tidak ada wajah terdeteksi, face_embedding diatur ke null.');
+        }
 
         // Simpan data mahasiswa baru
+        console.log('[DEBUG] Semua pengecekan unik lolos. Mencoba Mahasiswa.create...');
         const newMahasiswa = await Mahasiswa.create({
             nim,
             nama,
             id_jenis_kelamin,
-            id_kelas,
             id_prodi,
+            id_semester: id_semester || null,
             image: imagePath,
+            face_embedding: faceEmbedding,
             email: email || null,
             password: hashedPassword,
             no_wa: no_wa || null,
@@ -124,8 +147,8 @@ export const createMahasiswa = async (req, res) => {
                 nim: newMahasiswa.nim,
                 nama: newMahasiswa.nama,
                 id_jenis_kelamin: newMahasiswa.id_jenis_kelamin,
-                id_kelas: newMahasiswa.id_kelas,
                 id_prodi: newMahasiswa.id_prodi,
+                id_semester: newMahasiswa.id_semester,
                 image: newMahasiswa.image,
                 email: newMahasiswa.email,
                 no_wa: newMahasiswa.no_wa
@@ -145,9 +168,18 @@ export const createMahasiswa = async (req, res) => {
 
         // Handle Sequelize unique constraint errors
         if (error.name === 'SequelizeUniqueConstraintError') {
+            const field = error.errors[0].path;
+            let message = 'Terjadi duplikasi data.';
+            if (field === 'nim') {
+                message = 'NIM sudah digunakan.';
+            } else if (field === 'email') {
+                message = 'Email sudah digunakan.';
+            } else if (field === 'id') {
+                message = 'Terjadi kesalahan pada ID internal. Coba lagi.';
+            }
             return res.status(400).json({
                 statusCode: 400,
-                message: "NIM atau email sudah digunakan",
+                message: message,
                 data: null
             });
         }
@@ -242,12 +274,19 @@ export const loginMahasiswa = async (req, res) => {
         // Generate token
         const token = auth.generateToken(payload);
 
-        // Kirim response dengan token dan data mahasiswa
+        // Kirim response dengan token dan data mahasiswa yang lengkap
         res.status(200).json({
             statusCode: 200,
             message: "Login berhasil",
             data: {
-                token                
+                token,
+                user: {
+                    id: mahasiswa.id,
+                    nim: mahasiswa.nim,
+                    nama: mahasiswa.nama,
+                    image: mahasiswa.image,
+
+                }
             }
         });
     } catch (error) {
@@ -293,60 +332,182 @@ export const getMahasiswaById = async (req, res) => {
     }
 };
 
-// Fungsi untuk memperbarui data mahasiswa berdasarkan ID dari token
-export const updateDataMahasiswa = async (req, res) => {
+// Fungsi untuk mendapatkan data mahasiswa berdasarkan NIM
+export const updateDataMahasiswaById = async (req, res) => {
     try {
-        // ID mahasiswa diambil dari token
-        const mahasiswaId = req.user.id;
-        const { nama, nim, password } = req.body;
-
-        const mahasiswa = await Mahasiswa.findByPk(mahasiswaId);
+        const { id } = req.params;
+        const mahasiswa = await Mahasiswa.findByPk(id);
 
         if (!mahasiswa) {
             return res.status(404).json({
                 statusCode: 404,
-                message: `Mahasiswa tidak ditemukan`,
-                data: null
+                message: "Mahasiswa tidak ditemukan",
             });
         }
 
-        // Siapkan data untuk diupdate
-        const updateData = { nama, nim };
+        // Siapkan data untuk pembaruan
+        const { password, ...otherData } = req.body;
+        const dataToUpdate = { ...otherData };
 
-        // Jika ada file gambar baru, update path gambar
+        // Update gambar dan face embedding jika ada file baru
         if (req.file) {
-            updateData.image = req.file.path;
+            const newImagePath = `/uploads/mahasiswa/${req.file.filename}`;
+            dataToUpdate.image = newImagePath;
+
+            // Dapatkan path absolut dari file yang diunggah
+            const absoluteImagePath = path.join(process.cwd(), 'uploads', 'mahasiswa', req.file.filename);
+            console.log(`[ADMIN-DEBUG] Mencoba menghasilkan face descriptor untuk: ${absoluteImagePath}`);
+
+            // Hasilkan face descriptor dari gambar baru
+            const faceDescriptor = await getFaceEmbedding(absoluteImagePath);
+
+            if (faceDescriptor) {
+                console.log('[ADMIN-DEBUG] Face descriptor berhasil dibuat.');
+                // Konversi Float32Array ke array biasa untuk disimpan di JSON
+                dataToUpdate.face_embedding = Array.from(faceDescriptor);
+            } else {
+                console.log('[ADMIN-WARN] Tidak ada wajah terdeteksi, face_embedding diatur ke null.');
+                dataToUpdate.face_embedding = null;
+            }
         }
 
-        // Jika ada password baru (dan tidak kosong), hash dan update
-        if (password && password.trim() !== '') {
-            const salt = await bcrypt.genSalt(10);
-            updateData.password = await bcrypt.hash(password, salt);
+        // Tangani hashing password hanya jika password baru diberikan
+        if (password && password.length > 0) {
+            dataToUpdate.password = await bcrypt.hash(password, 12);
         }
 
-        await mahasiswa.update(updateData);
+        // Lakukan pembaruan
+        await mahasiswa.update(dataToUpdate);
 
-        // Ambil data terbaru setelah update untuk dikirim sebagai response
-        const updatedMahasiswa = await Mahasiswa.findByPk(mahasiswaId, {
-            attributes: { exclude: ['password'] }
-        });
-
+        // Kembalikan respons sukses dengan data yang diperbarui
         res.status(200).json({
             statusCode: 200,
             message: "Data mahasiswa berhasil diperbarui",
-            data: updatedMahasiswa
+            data: mahasiswa, // instance diperbarui di tempat oleh .update()
         });
     } catch (error) {
-        console.error("Error updateDataMahasiswa:", error);
+        console.error("Error updating mahasiswa by id:", error);
         res.status(500).json({
             statusCode: 500,
             message: "Terjadi kesalahan saat memperbarui data mahasiswa",
-            data: null
         });
     }
 };
 
-// Fungsi untuk mendapatkan data mahasiswa berdasarkan NIM
+export const deleteMahasiswa = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const mahasiswa = await Mahasiswa.findByPk(id);
+
+        if (!mahasiswa) {
+            return res.status(404).json({
+                statusCode: 404,
+                message: "Mahasiswa tidak ditemukan",
+            });
+        }
+
+        await mahasiswa.destroy();
+
+        res.status(200).json({
+            statusCode: 200,
+            message: "Data mahasiswa berhasil dihapus",
+        });
+    } catch (error) {
+        console.error("Error deleting mahasiswa:", error);
+        res.status(500).json({
+            statusCode: 500,
+            message: "Terjadi kesalahan saat menghapus data mahasiswa",
+        });
+    }
+};
+
+// Untuk update data mahasiswa (Untuk Mobile)
+export const updateMahasiswaByNim = async (req, res) => { 
+    try {
+        const { nim } = req.params;
+        const loggedInUserId = req.user.id; // Diambil dari token JWT
+
+        const mahasiswaToUpdate = await Mahasiswa.findOne({ where: { nim } });
+
+        if (!mahasiswaToUpdate) {
+            return res.status(404).json({
+                statusCode: 404,
+                message: "Mahasiswa tidak ditemukan",
+            });
+        }
+
+        // Security Check: Pastikan mahasiswa yang login hanya bisa mengubah datanya sendiri
+        if (mahasiswaToUpdate.id !== loggedInUserId) {
+            return res.status(403).json({
+                statusCode: 403,
+                message: "Akses ditolak. Anda hanya dapat memperbarui profil Anda sendiri.",
+            });
+        }
+
+        const { nama, password } = req.body;
+        const imageFile = req.file;
+
+        // Validasi: Pastikan ada data yang dikirim untuk diupdate
+        if (!nama && !password && !imageFile) {
+            return res.status(400).json({
+                statusCode: 400,
+                message: "Tidak ada data yang diperbarui. Mohon kirim nama, password, atau gambar baru.",
+            });
+        }
+
+        // Update nama jika ada
+        if (nama) {
+            mahasiswaToUpdate.nama = nama;
+        }
+
+        // Update password jika ada
+        if (password) {
+            const hashedPassword = await bcrypt.hash(password, 12);
+            mahasiswaToUpdate.password = hashedPassword;
+        }
+
+        // Update gambar dan face embedding jika ada file baru
+        if (imageFile) {
+            const newImagePath = `/uploads/mahasiswa/${imageFile.filename}`;
+            mahasiswaToUpdate.image = newImagePath;
+
+            // Dapatkan path absolut dari file yang diunggah
+            const absoluteImagePath = path.join(process.cwd(), 'uploads', 'mahasiswa', imageFile.filename);
+            console.log(`[DEBUG] Mencoba menghasilkan face descriptor untuk: ${absoluteImagePath}`);
+
+            // Hasilkan face descriptor dari gambar baru
+            const faceDescriptor = await getFaceEmbedding(absoluteImagePath);
+
+            if (faceDescriptor) {
+                console.log('[DEBUG] Face descriptor berhasil dibuat.');
+                // Konversi Float32Array ke array biasa untuk disimpan di JSON
+                mahasiswaToUpdate.face_embedding = Array.from(faceDescriptor);
+            } else {
+                console.log('[WARN] Tidak ada wajah terdeteksi, face_embedding diatur ke null.');
+                mahasiswaToUpdate.face_embedding = null;
+            }
+        }
+
+        await mahasiswaToUpdate.save();
+
+        res.status(200).json({
+            statusCode: 200,
+            message: "Profil berhasil diperbarui",
+            data: {
+                image: mahasiswaToUpdate.image,
+                nama: mahasiswaToUpdate.nama,
+            },
+        });
+    } catch (error) {
+        console.error("Error updating mahasiswa by nim:", error);
+        res.status(500).json({
+            statusCode: 500,
+            message: "Terjadi kesalahan saat memperbarui data mahasiswa",
+        });
+    }
+};
+
+// untuk mobile
 export const getMahasiswaByNim = async (req, res) => {
     try {
         const { nim } = req.params;
@@ -361,7 +522,19 @@ export const getMahasiswaByNim = async (req, res) => {
 
         const mahasiswa = await Mahasiswa.findOne({
             where: { nim },
-            attributes: { exclude: ['password'] } // Jangan kirim password
+            attributes: ['id', 'nim', 'nama', 'image', 'password', 'face_embedding', 'id_semester', 'id_prodi'],
+            include: [
+                {
+                    model: Semester,
+                    as: 'semester',
+                    attributes: ['id', 'nama']
+                },
+                {
+                    model: Prodi,
+                    as: 'prodi',
+                    attributes: ['id', 'nama']
+                }
+            ]
         });
 
         if (!mahasiswa) {
