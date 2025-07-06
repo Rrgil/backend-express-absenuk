@@ -3,19 +3,11 @@ import db from "../config/db.config.js";
 
 const DataTypes = Sequelize;
 
-const Dosen = db.define("dosen", {
+const StatusAbsen = db.define("status_absen", {
     id: {
         type: DataTypes.BIGINT,
         primaryKey: true,
         autoIncrement: true
-    },
-    nidn: {
-        type: DataTypes.STRING,
-        allowNull: false
-    },
-    kode_dosen: {
-        type: DataTypes.STRING,
-        allowNull: false
     },
     nama: {
         type: DataTypes.STRING,
@@ -27,4 +19,4 @@ const Dosen = db.define("dosen", {
     }
 })
 
-export default Dosen;
+export default StatusAbsen;

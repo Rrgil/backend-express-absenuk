@@ -3,6 +3,7 @@ import db from "../config/db.config.js";
 
 import Mahasiswa from "./mahasiswa.model.js";
 import Jadwal from "./jadwal.model.js";
+import StatusAbsen from "./status_absen.model.js";
 
 const DataTypes = Sequelize;
 
@@ -28,6 +29,14 @@ const Presensi = db.define("presensi", {
             key: 'id'
         }
     },
+    id_status_absen: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        references: {
+            model: StatusAbsen,
+            key: 'id'
+        }
+    },
     masuk_date: {
         type: DataTypes.DATE,
         allowNull: false
@@ -41,39 +50,48 @@ const Presensi = db.define("presensi", {
         allowNull: false
     },
     masuk_image: {
-        type: DataTypes.STRING,
+        type: DataTypes.TEXT,
         allowNull: false
     },
     keluar_date: {
         type: DataTypes.DATE,
-        allowNull: false
+        allowNull: true
     },
     keluar_lat: {
         type: DataTypes.FLOAT,
-        allowNull: false
+        allowNull: true
     },
     keluar_lng: {
         type: DataTypes.FLOAT,
-        allowNull: false
+        allowNull: true
     },
     keluar_image: {
-        type: DataTypes.STRING,
-        allowNull: false
+        type: DataTypes.TEXT,
+        allowNull: true
     },
     status: {
         type: DataTypes.SMALLINT,
-        allowNull: false
+        allowNull: false,
+        defaultValue: 1 // 1 for active (not deleted), 0 for soft-deleted
     }
 })
 
 // Relasi Presensi dengan Mahasiswa
 Presensi.belongsTo(Mahasiswa, {
-    foreignKey: 'id'
+    foreignKey: 'id_mahasiswa',
+    as: 'mahasiswa'
+})
+
+// Relasi Presensi dengan Status Absen
+Presensi.belongsTo(StatusAbsen, {
+    foreignKey: 'id_status_absen',
+    as: 'status_absen'
 })
 
 // Relasi Presensi dengan Jadwal
 Presensi.belongsTo(Jadwal, {
-    foreignKey: 'id'
+    foreignKey: 'id_jadwal',
+    as: 'jadwal'
 })
 
 export default Presensi;

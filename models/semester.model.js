@@ -3,7 +3,7 @@ import db from "../config/db.config.js";
 
 const DataTypes = Sequelize;
 
-const Hari = db.define("hari", {
+const Semester = db.define("semester", {
     id: {
         type: DataTypes.BIGINT,
         primaryKey: true,
@@ -13,9 +13,6 @@ const Hari = db.define("hari", {
         type: DataTypes.STRING,
         allowNull: false
     }
-}, {
-    tableName: 'hari',
-    freezeTableName: true
 })
 
-export default Hari;
+export default Semester;

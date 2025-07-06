@@ -2,7 +2,7 @@ import { Sequelize } from "sequelize";
 import db from "../config/db.config.js";
 
 import JenisKelamin from "./jenis_kelamin.model.js";
-import Kelas from "./kelas.model.js";
+import Semester from "./semester.model.js";
 import Prodi from "./prodi.model.js";
 
 const DataTypes = Sequelize; 
@@ -29,11 +29,11 @@ const Mahasiswa = db.define("mahasiswa", {
             key: 'id'
         }
     },
-    id_kelas: {
+    id_semester: {
         type: DataTypes.INTEGER,
         allowNull: false,
         references: {
-            model: Kelas,
+            model: Semester,
             key: 'id'
         }
     },
@@ -56,6 +56,17 @@ const Mahasiswa = db.define("mahasiswa", {
     password: {
         type: DataTypes.STRING,
         allowNull: false
+    },
+    face_embedding: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        get() {
+            const rawValue = this.getDataValue('face_embedding');
+            return rawValue ? JSON.parse(rawValue) : null;
+        },
+        set(value) {
+            this.setDataValue('face_embedding', value ? JSON.stringify(value) : null);
+        }
     },
     no_wa: {
         type: DataTypes.STRING,
@@ -85,10 +96,10 @@ Mahasiswa.belongsTo(JenisKelamin, {
     as: 'jenis_kelamin'
 })
 
-// Relasi Mahasiswa dengan Kelas
-Mahasiswa.belongsTo(Kelas, {
-    foreignKey: 'id_kelas',
-    as: 'kelas'
+// Relasi Mahasiswa dengan Semester
+Mahasiswa.belongsTo(Semester, {
+    foreignKey: 'id_semester',
+    as: 'semester'
 })
 
 // Relasi Mahasiswa dengan Prodi

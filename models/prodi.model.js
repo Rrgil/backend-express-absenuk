@@ -11,11 +11,13 @@ const Prodi = db.define("prodi", {
     },
     slug: {
         type: DataTypes.STRING,
-        allowNull: false
+        allowNull: false,
+        unique: true
     },
     nama: {
         type: DataTypes.STRING,
-        allowNull: false
+        allowNull: false,
+        unique: true
     },
     status: {
         type: DataTypes.SMALLINT,
